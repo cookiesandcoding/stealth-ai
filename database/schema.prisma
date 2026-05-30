@@ -1,0 +1,84 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  name         String?
+  subscription String    @default("free") // "free", "premium"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  resumes      Resume[]
+  sessions     Session[]
+
+  @@map("users")
+}
+
+model Resume {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName   String   @map("file_name")
+  fileUrl    String   @map("file_url")
+  parsedText String?  @map("parsed_text") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("resumes")
+}
+
+model Session {
+  id         String     @id @default(uuid())
+  userId     String     @map("user_id")
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String     @default("Interview Session")
+  transcript String?    @db.Text
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  questions  Question[]
+  analytics  Analytics?
+
+  @@map("sessions")
+}
+
+model Question {
+  id           String     @id @default(uuid())
+  sessionId    String     @map("session_id")
+  session      Session    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  category     String     // "Technical", "Behavioral", "HR", "System Design", "Product"
+  confidence   Float      // Classification confidence score (0.0 to 1.0)
+  questionText String     @map("question_text") @db.Text
+  timestamp    DateTime   @default(now()) @map("timestamp")
+  responses    Response[]
+
+  @@map("questions")
+}
+
+model Response {
+  id         String   @id @default(uuid())
+  questionId String   @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  aiResponse String   @map("ai_response") @db.Text // STAR format, code snippets, etc.
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("responses")
+}
+
+model Analytics {
+  id              String   @id @default(uuid())
+  sessionId       String   @unique @map("session_id")
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  fillerWordsCount Json     @map("filler_words_count") // e.g. {"um": 12, "like": 15}
+  speakingPace    Float    @map("speaking_pace") // words per minute (WPM)
+  clarityScore    Float    @map("clarity_score") // 0 to 100
+  knowledgeGaps   String[] @map("knowledge_gaps") // areas of uncertainty
+  suggestions     String[] @map("suggestions") // actionable recommendations
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("analytics")
+}
