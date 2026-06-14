@@ -14,7 +14,7 @@ class UserSyncPayload(BaseModel):
 @router.post("/sync", status_code=status.HTTP_200_OK)
 async def sync_user(payload: UserSyncPayload):
     """
-    Synchronizes authenticated Supabase users into our local PostgreSQL database.
+    Synchronizes authenticated Clerk users into our local database.
     """
     try:
         # Check if user already exists

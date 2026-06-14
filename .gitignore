@@ -1,0 +1,12 @@
+# Python virtual environment and local database
+backend-service/venv/
+backend-service/local_copilot.db
+backend-service/__pycache__/
+*.pyc
+
+# Node/JS artifacts
+desktop-app/node_modules/
+desktop-app/dist/
+
+# OS files
+.DS_Store

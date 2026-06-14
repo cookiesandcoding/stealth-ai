@@ -27,14 +27,108 @@ export const FloatingOverlay: React.FC = () => {
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const { suggestions } = useCopilotStore();
 
-  // Global hotkeys (Command/Ctrl + Shift + O = Toggle Pin, Option/Alt + R = Toggle Record)
+  const navigateSuggestion = (direction: 'next' | 'prev') => {
+    if (suggestions.length === 0 || !currentSuggestion) return;
+    const currentIndex = suggestions.findIndex(s => s.question_id === currentSuggestion.question_id);
+    if (currentIndex === -1) return;
+    
+    let targetIndex = currentIndex;
+    if (direction === 'next') {
+      targetIndex = Math.min(suggestions.length - 1, currentIndex + 1);
+    } else {
+      targetIndex = Math.max(0, currentIndex - 1);
+    }
+    
+    // Directly update state of current suggestion
+    useCopilotStore.setState({ currentSuggestion: suggestions[targetIndex] });
+  };
+
+  const handleHideWindow = async () => {
+    try {
+      // @ts-ignore
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().hide();
+    } catch (e) {
+      console.log("Hide Window requested (Tauri client connection simulated).");
+    }
+  };
+
+  // Global hotkeys (TRD Alignment)
   useEffect(() => {
     const handleKeybinds = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'o') {
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      
+      // Ctrl + Shift + A -> Start Interview
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        if (!isRecording) {
+          handleStartRecording();
+        }
+      }
+      
+      // Ctrl + Shift + P -> Pause / Stop Listening
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        if (isRecording) {
+          handleStopRecording();
+        }
+      }
+      
+      // Ctrl + Shift + H -> Hide Window
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        handleHideWindow();
+      }
+      
+      // Ctrl + Shift + B -> Behavioral Mode
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setOverlayTab('copilot');
+        console.log("Switched to Behavioral Mode");
+      }
+      
+      // Ctrl + Shift + C -> Coding Mode
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        setOverlayTab('screen');
+        console.log("Switched to Coding Mode");
+      }
+      
+      // Ctrl + Shift + D -> System Design Mode
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setOverlayTab('settings');
+        console.log("Switched to System Design Mode");
+      }
+      
+      // Ctrl + Shift + S -> Screenshot Analysis
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setOverlayTab('screen');
+        triggerScreenAnalysis();
+      }
+      
+      // Ctrl + ArrowRight -> Next Suggestion (Older)
+      if (isCtrlOrMeta && e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigateSuggestion('next');
+      }
+      
+      // Ctrl + ArrowLeft -> Previous Suggestion (Newer)
+      if (isCtrlOrMeta && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateSuggestion('prev');
+      }
+      
+      // Command/Ctrl + Shift + O = Toggle Pin
+      if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         togglePin();
       }
+      
+      // Option/Alt + R = Toggle Record
       if (e.altKey && e.key.toLowerCase() === 'r') {
         e.preventDefault();
         if (isRecording) {
@@ -44,9 +138,10 @@ export const FloatingOverlay: React.FC = () => {
         }
       }
     };
+    
     window.addEventListener('keydown', handleKeybinds);
     return () => window.removeEventListener('keydown', handleKeybinds);
-  }, [isRecording, activeSessionId]);
+  }, [isRecording, activeSessionId, suggestions, currentSuggestion]);
 
   // Handle Starting Real-time audio pipeline
   const handleStartRecording = async () => {

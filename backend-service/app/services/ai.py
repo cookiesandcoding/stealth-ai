@@ -7,21 +7,32 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize Google Generative AI
+# Initialize AI APIs
+from openai import AsyncOpenAI
+
+openai_client = None
+if settings.OPENAI_API_KEY:
+    openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    logger.info("OpenAI API client successfully initialized.")
+else:
+    logger.warning("OPENAI_API_KEY not found in configuration. Operating with OpenAI features disabled.")
+
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
+    logger.info("Gemini API client successfully configured.")
 else:
-    logger.warning("GEMINI_API_KEY not found in configuration. Operating in simulated offline mode.")
+    logger.warning("GEMINI_API_KEY not found in configuration. Operating with Gemini features disabled.")
 
 class AIOrchestrationService:
     def __init__(self):
-        self.has_key = bool(settings.GEMINI_API_KEY)
-        self.flash_model = "gemini-2.5-flash" if self.has_key else None
-        self.pro_model = "gemini-2.5-pro" if self.has_key else None
+        self.has_openai = bool(settings.OPENAI_API_KEY)
+        self.has_gemini = bool(settings.GEMINI_API_KEY)
+        self.flash_model = "gemini-2.5-flash" if self.has_gemini else None
+        self.pro_model = "gemini-2.5-pro" if self.has_gemini else None
 
     async def generate_bullet_suggestion(self, question: str, category: str, resume_context: Optional[str] = None, screen_context: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generates low-latency answer suggestions using Gemini Flash.
+        Generates low-latency answer suggestions using OpenAI GPT as primary and Gemini as fallback.
         """
         system_instruction = (
             "You are an expert Interview Copilot. Your goal is to help the candidate with bulleted key talking points in real-time. "
@@ -35,30 +46,51 @@ class AIOrchestrationService:
             prompt += f"\nCandidate Resume Context:\n{resume_context}\n"
         if screen_context:
             prompt += f"\nScreen OCR/Visual Context:\n{screen_context}\n"
-            
-        if not self.has_key:
-            return self._mock_bullet_suggestion(question, category)
-            
-        try:
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
-                generation_config={"response_mime_type": "application/json"},
-                system_instruction=system_instruction
-            )
-            response = model.generate_content(prompt)
-            data = json.loads(response.text)
-            return {
-                "bullet_answer": data.get("bullet_answer", []),
-                "explanation": data.get("explanation", ""),
-                "model_used": "gemini-2.5-flash"
-            }
-        except Exception as e:
-            logger.error(f"Error calling Gemini API for low-latency suggestion: {e}")
-            return self._mock_bullet_suggestion(question, category)
+
+        # 1. Try OpenAI (Primary)
+        if self.has_openai and openai_client:
+            try:
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                data = json.loads(response.choices[0].message.content)
+                return {
+                    "bullet_answer": data.get("bullet_answer", []),
+                    "explanation": data.get("explanation", ""),
+                    "model_used": "gpt-4o"
+                }
+            except Exception as e:
+                logger.error(f"Error calling OpenAI API for low-latency suggestion: {e}. Falling back to Gemini.")
+
+        # 2. Try Gemini (Fallback)
+        if self.has_gemini:
+            try:
+                model = genai.GenerativeModel(
+                    model_name="gemini-2.5-flash",
+                    generation_config={"response_mime_type": "application/json"},
+                    system_instruction=system_instruction
+                )
+                response = model.generate_content(prompt)
+                data = json.loads(response.text)
+                return {
+                    "bullet_answer": data.get("bullet_answer", []),
+                    "explanation": data.get("explanation", ""),
+                    "model_used": "gemini-2.5-flash"
+                }
+            except Exception as e:
+                logger.error(f"Error calling Gemini API for low-latency suggestion: {e}")
+
+        # 3. Simulated Fallback
+        return self._mock_bullet_suggestion(question, category)
 
     async def generate_deep_explanation(self, question: str, category: str, resume_context: Optional[str] = None, screen_context: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generates deep, reasoning-focused structural answers (STAR or design layout) using Gemini Pro.
+        Generates deep, reasoning-focused structural answers using OpenAI GPT as primary and Gemini Pro as fallback.
         """
         system_instruction = (
             "You are an elite System Design and Behavioral Coach. Analyze the question and provide a comprehensive, fully detailed response. "
@@ -73,26 +105,47 @@ class AIOrchestrationService:
             prompt += f"\nResume Details:\n{resume_context}\n"
         if screen_context:
             prompt += f"\nVisual Screen Context:\n{screen_context}\n"
-            
-        if not self.has_key:
-            return self._mock_deep_response(question, category)
-            
-        try:
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-pro",
-                generation_config={"response_mime_type": "application/json"},
-                system_instruction=system_instruction
-            )
-            response = model.generate_content(prompt)
-            data = json.loads(response.text)
-            return {
-                "detailed_response": data.get("detailed_response", ""),
-                "follow_up_questions": data.get("follow_up_questions", []),
-                "model_used": "gemini-2.5-pro"
-            }
-        except Exception as e:
-            logger.error(f"Error calling Gemini API for deep explanation: {e}")
-            return self._mock_deep_response(question, category)
+
+        # 1. Try OpenAI (Primary)
+        if self.has_openai and openai_client:
+            try:
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                data = json.loads(response.choices[0].message.content)
+                return {
+                    "detailed_response": data.get("detailed_response", ""),
+                    "follow_up_questions": data.get("follow_up_questions", []),
+                    "model_used": "gpt-4o"
+                }
+            except Exception as e:
+                logger.error(f"Error calling OpenAI API for deep explanation: {e}. Falling back to Gemini.")
+
+        # 2. Try Gemini (Fallback)
+        if self.has_gemini:
+            try:
+                model = genai.GenerativeModel(
+                    model_name="gemini-2.5-pro",
+                    generation_config={"response_mime_type": "application/json"},
+                    system_instruction=system_instruction
+                )
+                response = model.generate_content(prompt)
+                data = json.loads(response.text)
+                return {
+                    "detailed_response": data.get("detailed_response", ""),
+                    "follow_up_questions": data.get("follow_up_questions", []),
+                    "model_used": "gemini-2.5-pro"
+                }
+            except Exception as e:
+                logger.error(f"Error calling Gemini API for deep explanation: {e}")
+
+        # 3. Simulated Fallback
+        return self._mock_deep_response(question, category)
 
     def _mock_bullet_suggestion(self, question: str, category: str) -> Dict[str, Any]:
         """

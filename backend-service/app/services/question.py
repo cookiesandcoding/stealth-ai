@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import google.generativeai as genai
 from app.core.config import settings
 

@@ -120,8 +120,16 @@ async def get_session_analytics(session_id: str):
         )
         
         if analytics_row:
-            # Parse Json columns
-            analytics_row["fillerWordsCount"] = json.loads(analytics_row["filler_words_count"])
+            fw = analytics_row.get("filler_words_count")
+            if isinstance(fw, str):
+                try:
+                    fw_parsed = json.loads(fw)
+                except Exception:
+                    fw_parsed = {}
+            else:
+                fw_parsed = fw or {}
+            analytics_row["filler_words_count"] = fw_parsed
+            analytics_row["fillerWordsCount"] = fw_parsed
             return {"analytics": analytics_row}
             
         # If not, generate fresh metrics from accumulated transcripts
